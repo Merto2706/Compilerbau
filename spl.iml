@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<module version="4">
+  <component name="AutoImportedSourceRoots">
+    <option name="directories">
+      <list>
+        <option value="D:\Projekte\Compilerbau\compilerbau\praktikum\spl-compiler-skeleton\kotlin\target/generated-sources/cup" />
+        <option value="D:\Projekte\Compilerbau\compilerbau\praktikum\spl-compiler-skeleton\kotlin\target/generated-sources/jflex" />
+        <option value="src/main/kotlin" />
+      </list>
+    </option>
+  </component>
+</module>

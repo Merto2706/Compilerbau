@@ -1,0 +1,60 @@
+{
+  "course_name": "Compilerbau-ss23",
+  "server": {
+    "hostname": "http://uw-cb-abgabe.mni.thm.de",
+    "port": 8000
+  },
+  "max_team_size": 2,
+  "assignment_ids": [
+    "Aufgabe-1",
+    "Aufgabe-2"
+  ],
+  "skeleton_variants": [
+    {
+      "name": "Java SPL Compiler",
+      "root": "java",
+      "build": "mvn clean compile",
+      "allowed_files": [
+        "src/*.java",
+        "src/*.flex",
+        "src/*.cup",
+        "pom.xml"
+      ],
+      "variant_data": {
+        "identifier": "spl-compiler-java"
+      }
+    },
+    {
+      "name": "C SPL Compiler",
+      "root": "c",
+      "build": "cmake . && make",
+      "allowed_files": [
+        "src/*.c",
+        "src/*.h",
+        "src/*.flex",
+        "src/*.y",
+        "CMakeLists.txt"
+      ],
+      "variant_data": {
+        "identifier": "spl-compiler-c"
+      }
+    },
+    {
+      "name": "Kotlin SPL Compiler",
+      "root": "kotlin",
+      "build": "mvn clean compile",
+      "allowed_files": [
+        "src/*.kt",
+        "src/*.java",
+        "src/*.flex",
+        "src/*.cup",
+        "pom.xml"
+      ],
+      "variant_data": {
+        "identifier": "spl-compiler-kotlin"
+      }
+    }
+  ]
+}
+
+
