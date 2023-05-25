@@ -61,8 +61,6 @@ nonterminal ParameterDeclaration parameterDeclaration;
 nonterminal VariableDeclaration variableDeclaration;
 nonterminal ArrayTypeExpression arrayTypeExpression;
 nonterminal NamedTypeExpression namedTypeExpression;
-nonterminal IntLiteral intLiteral;
-nonterminal VariableExpression variableExpression;
 nonterminal Variable variable;
 nonterminal ArrayAccess arrayAccess;
 nonterminal NamedVariable namedVariable;
@@ -70,14 +68,16 @@ nonterminal AssignStatement assignStatement;
 nonterminal CallStatement callStatement;
 nonterminal CompoundStatement compoundStatement;
 nonterminal EmptyStatement emptyStatement;
-nonterminal IfStatement ifStatement;
-nonterminal WhileStatement whileStatement;
 nonterminal List <VariableDeclaration> variableList;
 nonterminal List <Statement> statementList;
 nonterminal List <Expression> argumentList, notEmptyArgumentList;
 nonterminal Expression expression, exp0, exp1, exp2, exp3, exp4;
 nonterminal BinaryExpression.Operator precedence1, precedence2, comp;
 
+
+nonterminal Statement closedStatement;
+nonterminal Statement openStatement;
+nonterminal Statement simpleStatement;
 
 start with program;
 
@@ -156,19 +156,6 @@ arrayAccess ::=                                       variable:var LBRACK expres
 namedVariable ::=                                     IDENT:id {:RESULT = new NamedVariable(new Position(idleft, idright), id);:};
 
 
-statement ::=                                         assignStatement:as {:RESULT = as;:}
-                                                      | callStatement:ca {:RESULT = ca;:}
-                                                      | compoundStatement:cs {:RESULT = cs;:}
-                                                      | ifStatement:is {:RESULT = is;:}
-                                                      | whileStatement:ws {:RESULT = ws;:}
-                                                      | emptyStatement:es {:RESULT = es;:};
-
-statementList ::=                                     {:RESULT = nil();:}/*empty*/
-                                                      | statement:stm statementList:stmList {:RESULT = cons(stm, stmList);:};
-
-assignStatement ::=                                   variable:var ASGN expression:exp SEMIC {:RESULT = new AssignStatement(new Position(varleft, varright), var, exp);:};
-
-callStatement ::=                                     IDENT:ident LPAREN argumentList:argList RPAREN SEMIC {:RESULT = new CallStatement(new Position(identleft, identright), ident, argList);:};
 
 
 argumentList ::=                                      {:RESULT = nil();:} /*empty*/
@@ -177,8 +164,36 @@ argumentList ::=                                      {:RESULT = nil();:} /*empt
 notEmptyArgumentList ::=                              expression:exp {:RESULT = cons(exp, nil());:}
                                                       | expression:exp COMMA notEmptyArgumentList:nMtArgList {:RESULT = cons(exp, nMtArgList);:};
 
+
+
+// https://en.wikipedia.org/wiki/Dangling_else
+
+
+statementList ::=                                     {:RESULT = nil();:}/*empty*/
+                                                      | statement:stm statementList:stmList {:RESULT = cons(stm, stmList);:};
+
+statement ::=                                         openStatement:os {:RESULT = os;:}
+                                                      | closedStatement:cls {:RESULT = cls;:};
+
 compoundStatement ::=                                 LCURL statementList:stmList RCURL {:RESULT = new CompoundStatement(new Position(stmListleft, stmListright), stmList);:};
+
+openStatement ::=                                     IF:pos LPAREN expression:exp RPAREN simpleStatement:thenStm {:RESULT = new IfStatement(new Position(posleft, posright), exp, thenStm, new EmptyStatement(Position.ERROR_POSITION));:}
+                                                      | IF:pos LPAREN expression:exp RPAREN openStatement:thenStm {:RESULT = new IfStatement(new Position(posleft, posright), exp, thenStm, new EmptyStatement(Position.ERROR_POSITION));:}
+                                                      | IF:pos LPAREN expression:exp RPAREN closedStatement:thenStm ELSE openStatement:elseStm {:RESULT = new IfStatement(new Position(posleft, posright), exp, thenStm, elseStm);:}
+                                                      | WHILE:pos LPAREN expression:exp RPAREN openStatement:stm {:RESULT = new WhileStatement(new Position(posleft, posright), exp, stm);:};
+
+closedStatement ::=                                   simpleStatement:sm {:RESULT = sm;:}
+                                                      | IF:pos LPAREN expression:exp RPAREN closedStatement:thenStm ELSE closedStatement:elseStm {:RESULT = new IfStatement(new Position(posleft, posright), exp, thenStm, elseStm);:}
+                                                      | WHILE:pos LPAREN expression:exp RPAREN closedStatement:stm {:RESULT = new WhileStatement(new Position(posleft, posright), exp, stm);:};
+
+simpleStatement ::=                                  assignStatement:as {:RESULT = as;:}
+                                                      | callStatement:ca {:RESULT = ca;:}
+                                                      | emptyStatement:es {:RESULT = es;:}
+                                                      | compoundStatement:cs {:RESULT = cs;:};
+
+
+assignStatement ::=                                   variable:var ASGN expression:exp SEMIC {:RESULT = new AssignStatement(new Position(varleft, varright), var, exp);:};
+
+callStatement ::=                                     IDENT:ident LPAREN argumentList:argList RPAREN SEMIC {:RESULT = new CallStatement(new Position(identleft, identright), ident, argList);:};
+
 emptyStatement ::=                                    SEMIC {:RESULT = new EmptyStatement(Position.ERROR_POSITION);:};
-ifStatement ::=                                       IF:pos LPAREN expression:exp RPAREN statement:thenStm {:RESULT = new IfStatement(new Position(posleft, posright), exp, thenStm, new EmptyStatement(Position.ERROR_POSITION));:}
-                                                      | IF:pos LPAREN expression:exp RPAREN statement:thenStm ELSE statement:elseStm {:RESULT = new IfStatement(new Position(posleft, posright), exp, thenStm, elseStm);:} ;
-whileStatement ::=                                    WHILE:pos LPAREN expression:exp RPAREN statement:stm {:RESULT = new WhileStatement(new Position(posleft, posright), exp, stm);:};
