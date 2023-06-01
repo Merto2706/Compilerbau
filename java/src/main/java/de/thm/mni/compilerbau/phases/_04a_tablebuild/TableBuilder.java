@@ -1,15 +1,15 @@
 package de.thm.mni.compilerbau.phases._04a_tablebuild;
 
 import de.thm.mni.compilerbau.CommandLineOptions;
-import de.thm.mni.compilerbau.absyn.Expression;
-import de.thm.mni.compilerbau.absyn.Program;
-import de.thm.mni.compilerbau.absyn.TypeExpression;
-import de.thm.mni.compilerbau.absyn.Variable;
-import de.thm.mni.compilerbau.table.Identifier;
-import de.thm.mni.compilerbau.table.ProcedureEntry;
-import de.thm.mni.compilerbau.table.SymbolTable;
+import de.thm.mni.compilerbau.absyn.*;
+import de.thm.mni.compilerbau.table.*;
+import de.thm.mni.compilerbau.types.ArrayType;
 import de.thm.mni.compilerbau.types.Type;
 import de.thm.mni.compilerbau.utils.NotImplemented;
+import de.thm.mni.compilerbau.utils.SplError;
+
+import java.util.ArrayList;
+import java.util.List;
 
 /**
  * This class is used to create and populate a {@link SymbolTable} containing entries for every symbol in the currently
@@ -28,8 +28,80 @@ public class TableBuilder {
 
     public SymbolTable buildSymbolTable(Program program) {
         //TODO (assignment 4a): Initialize a symbol table with all predefined symbols and fill it with user-defined symbols
+        SymbolTable symbolTable = TableInitializer.initializeGlobalTable(options);
 
-        throw new NotImplemented();
+        for (GlobalDeclaration declaration : program.declarations) { // DeclarationS?
+            switch (declaration) {
+
+                case TypeDeclaration typeDeclaration -> {
+                    visitTypeexp(typeDeclaration.typeExpression, symbolTable);
+                    Entry entry = new TypeEntry(typeDeclaration.typeExpression.dataType);
+                    symbolTable.enter(typeDeclaration.name, entry, SplError.RedeclarationAsType(typeDeclaration.position, typeDeclaration.name));
+                }
+                case ProcedureDeclaration procedureDeclaration -> {
+                    SymbolTable localTable = new SymbolTable(symbolTable);
+                    List<ParameterType> paramTypes = new ArrayList<>();
+
+                    for (var parameterDeclaration : procedureDeclaration.parameters) {
+                        visitTypeexp(parameterDeclaration.typeExpression, symbolTable);
+
+
+                        VariableEntry entry = new VariableEntry(parameterDeclaration.typeExpression.dataType, parameterDeclaration.isReference);
+                        if (parameterDeclaration.typeExpression.dataType instanceof ArrayType && !parameterDeclaration.isReference)
+                            throw SplError.MustBeAReferenceParameter(parameterDeclaration.position, parameterDeclaration.name);
+
+                        localTable.enter(parameterDeclaration.name, entry, SplError.RedeclarationAsParameter(parameterDeclaration.position, parameterDeclaration.name));
+
+                        paramTypes.add(new ParameterType(parameterDeclaration.typeExpression.dataType, parameterDeclaration.isReference));
+                    }
+
+                    for (var var : procedureDeclaration.variables) {
+                        visitTypeexp(var.typeExpression, symbolTable); //variableDeclaration.typeExpression.accept(this);
+
+                        VariableEntry entry = new VariableEntry(var.typeExpression.dataType, false);
+
+                        localTable.enter(var.name, entry, SplError.RedeclarationAsVariable(var.position, var.name));
+
+                    }
+
+                    ProcedureEntry procedureEntry = new ProcedureEntry(localTable, paramTypes);
+                    symbolTable.enter(procedureDeclaration.name, procedureEntry, SplError.RedeclarationAsProcedure(procedureDeclaration.position, procedureDeclaration.name));
+                    if (options.phaseOption == CommandLineOptions.PhaseOption.TABLES)
+                        printSymbolTableAtEndOfProcedure(procedureDeclaration.name, procedureEntry);
+
+                }
+            }
+        }
+
+
+        Entry entry = symbolTable.lookup(new Identifier("main"), SplError.MainIsMissing());
+
+        if (!(entry instanceof ProcedureEntry))
+            throw SplError.MainIsNotAProcedure();
+
+        if (!((ProcedureEntry) entry).parameterTypes.isEmpty())
+            throw SplError.MainMustNotHaveParameters();
+
+        return symbolTable;
+    }
+
+    public Type visitTypeexp(TypeExpression td, SymbolTable st) {
+        return switch (td) {
+            case NamedTypeExpression namedTypeExpression -> {
+                Entry entry = st.lookup(namedTypeExpression.name,
+                        SplError.UndefinedType(namedTypeExpression.position, namedTypeExpression.name));
+                if (!(entry instanceof TypeEntry))
+                    throw SplError.NotAType(namedTypeExpression.position, namedTypeExpression.name);
+
+                yield namedTypeExpression.dataType = ((TypeEntry) entry).type;
+            }
+
+            case ArrayTypeExpression arrayTypeExpression -> {
+                visitTypeexp(arrayTypeExpression.baseType, st);
+                yield arrayTypeExpression.dataType = new ArrayType(arrayTypeExpression.baseType.dataType,
+                        arrayTypeExpression.arraySize);
+            }
+        };
     }
 
     /**
@@ -43,4 +115,5 @@ public class TableBuilder {
         System.out.format("Symbol table at end of procedure '%s':\n", name);
         System.out.println(entry.localTable.toString());
     }
+
 }
