@@ -2,10 +2,11 @@ package de.thm.mni.compilerbau.phases._04a_tablebuild;
 
 import de.thm.mni.compilerbau.CommandLineOptions;
 import de.thm.mni.compilerbau.absyn.*;
+import de.thm.mni.compilerbau.absyn.visitor.DoNothingVisitor;
+import de.thm.mni.compilerbau.absyn.visitor.Visitor;
 import de.thm.mni.compilerbau.table.*;
 import de.thm.mni.compilerbau.types.ArrayType;
 import de.thm.mni.compilerbau.types.Type;
-import de.thm.mni.compilerbau.utils.NotImplemented;
 import de.thm.mni.compilerbau.utils.SplError;
 
 import java.util.ArrayList;
@@ -20,59 +21,17 @@ import java.util.List;
  * {@link TypeExpression} or {@link Variable} classes.
  */
 public class TableBuilder {
-    private final CommandLineOptions options;
+    private final CommandLineOptions commandLineOptions;
 
-    public TableBuilder(CommandLineOptions options) {
-        this.options = options;
+    public TableBuilder(CommandLineOptions commandLineOptions) {
+        this.commandLineOptions = commandLineOptions;
     }
 
     public SymbolTable buildSymbolTable(Program program) {
-        //TODO (assignment 4a): Initialize a symbol table with all predefined symbols and fill it with user-defined symbols
-        SymbolTable symbolTable = TableInitializer.initializeGlobalTable(options);
+        SymbolTable symbolTable = TableInitializer.initializeGlobalTable(commandLineOptions);
 
-        for (GlobalDeclaration declaration : program.declarations) { // DeclarationS?
-            switch (declaration) {
-
-                case TypeDeclaration typeDeclaration -> {
-                    visitTypeexp(typeDeclaration.typeExpression, symbolTable);
-                    Entry entry = new TypeEntry(typeDeclaration.typeExpression.dataType);
-                    symbolTable.enter(typeDeclaration.name, entry, SplError.RedeclarationAsType(typeDeclaration.position, typeDeclaration.name));
-                }
-                case ProcedureDeclaration procedureDeclaration -> {
-                    SymbolTable localTable = new SymbolTable(symbolTable);
-                    List<ParameterType> paramTypes = new ArrayList<>();
-
-                    for (var parameterDeclaration : procedureDeclaration.parameters) {
-                        visitTypeexp(parameterDeclaration.typeExpression, symbolTable);
-
-
-                        VariableEntry entry = new VariableEntry(parameterDeclaration.typeExpression.dataType, parameterDeclaration.isReference);
-                        if (parameterDeclaration.typeExpression.dataType instanceof ArrayType && !parameterDeclaration.isReference)
-                            throw SplError.MustBeAReferenceParameter(parameterDeclaration.position, parameterDeclaration.name);
-
-                        localTable.enter(parameterDeclaration.name, entry, SplError.RedeclarationAsParameter(parameterDeclaration.position, parameterDeclaration.name));
-
-                        paramTypes.add(new ParameterType(parameterDeclaration.typeExpression.dataType, parameterDeclaration.isReference));
-                    }
-
-                    for (var var : procedureDeclaration.variables) {
-                        visitTypeexp(var.typeExpression, symbolTable); //variableDeclaration.typeExpression.accept(this);
-
-                        VariableEntry entry = new VariableEntry(var.typeExpression.dataType, false);
-
-                        localTable.enter(var.name, entry, SplError.RedeclarationAsVariable(var.position, var.name));
-
-                    }
-
-                    ProcedureEntry procedureEntry = new ProcedureEntry(localTable, paramTypes);
-                    symbolTable.enter(procedureDeclaration.name, procedureEntry, SplError.RedeclarationAsProcedure(procedureDeclaration.position, procedureDeclaration.name));
-                    if (options.phaseOption == CommandLineOptions.PhaseOption.TABLES)
-                        printSymbolTableAtEndOfProcedure(procedureDeclaration.name, procedureEntry);
-
-                }
-            }
-        }
-
+        TableBuilderVisitor tableBuilderVisitor = new TableBuilderVisitor(symbolTable);
+        tableBuilderVisitor.visit(program);
 
         Entry entry = symbolTable.lookup(new Identifier("main"), SplError.MainIsMissing());
 
@@ -85,25 +44,6 @@ public class TableBuilder {
         return symbolTable;
     }
 
-    public Type visitTypeexp(TypeExpression td, SymbolTable st) {
-        return switch (td) {
-            case NamedTypeExpression namedTypeExpression -> {
-                Entry entry = st.lookup(namedTypeExpression.name,
-                        SplError.UndefinedType(namedTypeExpression.position, namedTypeExpression.name));
-                if (!(entry instanceof TypeEntry))
-                    throw SplError.NotAType(namedTypeExpression.position, namedTypeExpression.name);
-
-                yield namedTypeExpression.dataType = ((TypeEntry) entry).type;
-            }
-
-            case ArrayTypeExpression arrayTypeExpression -> {
-                visitTypeexp(arrayTypeExpression.baseType, st);
-                yield arrayTypeExpression.dataType = new ArrayType(arrayTypeExpression.baseType.dataType,
-                        arrayTypeExpression.arraySize);
-            }
-        };
-    }
-
     /**
      * Prints the local symbol table of a procedure together with a heading-line
      * NOTE: You have to call this after completing the local table to support '--tables'.
@@ -111,9 +51,96 @@ public class TableBuilder {
      * @param name  The name of the procedure
      * @param entry The entry of the procedure to print
      */
-    static void printSymbolTableAtEndOfProcedure(Identifier name, ProcedureEntry entry) {
+    private static void printSymbolTableAtEndOfProcedure(Identifier name, ProcedureEntry entry) {
         System.out.format("Symbol table at end of procedure '%s':\n", name);
         System.out.println(entry.localTable.toString());
     }
 
+    private class TableBuilderVisitor extends DoNothingVisitor {
+        SymbolTable table;
+        TableBuilderVisitor upperVisitor;
+
+        TableBuilderVisitor(SymbolTable table) {
+            this.table = table;
+        }
+
+        TableBuilderVisitor(SymbolTable table, TableBuilderVisitor upperVisitor) {
+            this.table = table;
+            this.upperVisitor = upperVisitor;
+        }
+
+        @Override
+        public void visit(Program program) {
+            for (GlobalDeclaration declaration : program.declarations) {
+                declaration.accept(this);
+            }
+        }
+
+        @Override
+        public void visit(TypeDeclaration typeDeclaration) {
+            typeDeclaration.typeExpression.accept(this);
+            Entry entry = new TypeEntry(typeDeclaration.typeExpression.dataType);
+            table.enter(typeDeclaration.name, entry,
+                    SplError.RedeclarationAsType(typeDeclaration.position, typeDeclaration.name));
+        }
+
+        @Override
+        public void visit(NamedTypeExpression namedTypeExpression) {
+            Entry entry = table.lookup(namedTypeExpression.name,
+                    SplError.UndefinedType(namedTypeExpression.position, namedTypeExpression.name));
+            if (!(entry instanceof TypeEntry))
+                throw SplError.NotAType(namedTypeExpression.position, namedTypeExpression.name);
+
+            namedTypeExpression.dataType = ((TypeEntry) entry).type;
+        }
+
+        @Override
+        public void visit(ArrayTypeExpression arrayTypeExpression) {
+            arrayTypeExpression.baseType.accept(this);
+            arrayTypeExpression.dataType = new ArrayType(arrayTypeExpression.baseType.dataType,
+                    arrayTypeExpression.arraySize);
+        }
+
+        @Override
+        public void visit(ProcedureDeclaration procedureDeclaration) {
+            List<ParameterType> paramTypes = new ArrayList<>();
+            SymbolTable localTable = new SymbolTable(table);
+
+            TableBuilderVisitor localVisitor = new TableBuilderVisitor(localTable, this);
+
+            for (var parameterDeclaration : procedureDeclaration.parameters) {
+                parameterDeclaration.accept(localVisitor);
+                paramTypes.add(new ParameterType(parameterDeclaration.typeExpression.dataType, parameterDeclaration.isReference));
+            }
+
+            for (var var : procedureDeclaration.variables) {
+                var.accept(localVisitor);
+            }
+
+            ProcedureEntry procedureEntry = new ProcedureEntry(localTable, paramTypes);
+            table.enter(procedureDeclaration.name, procedureEntry, SplError.RedeclarationAsProcedure(procedureDeclaration.position, procedureDeclaration.name));
+            if (commandLineOptions.phaseOption == CommandLineOptions.PhaseOption.TABLES)
+                printSymbolTableAtEndOfProcedure(procedureDeclaration.name, procedureEntry);
+        }
+
+        @Override
+        public void visit(ParameterDeclaration parameterDeclaration) {
+            parameterDeclaration.typeExpression.accept(upperVisitor);
+
+            VariableEntry entry = new VariableEntry(parameterDeclaration.typeExpression.dataType, parameterDeclaration.isReference);
+            if (parameterDeclaration.typeExpression.dataType instanceof ArrayType && !parameterDeclaration.isReference)
+                throw SplError.MustBeAReferenceParameter(parameterDeclaration.position, parameterDeclaration.name);
+
+            table.enter(parameterDeclaration.name, entry, SplError.RedeclarationAsParameter(parameterDeclaration.position, parameterDeclaration.name));
+        }
+
+        @Override
+        public void visit(VariableDeclaration variableDeclaration) {
+            variableDeclaration.typeExpression.accept(this);
+
+            VariableEntry entry = new VariableEntry(variableDeclaration.typeExpression.dataType, false);
+
+            table.enter(variableDeclaration.name, entry, SplError.RedeclarationAsVariable(variableDeclaration.position, variableDeclaration.name));
+        }
+    }
 }
